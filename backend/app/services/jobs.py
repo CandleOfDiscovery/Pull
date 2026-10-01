@@ -1,28 +1,51 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from app.schemas.jobs import JobPage, JobSummary, RemoteType
+from sqlalchemy import Select, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Job
+from app.schemas.jobs import JobDetail, JobPage, JobSummary, RemoteType
 from app.services.freshness import freshness_label
 
 
-NOW = datetime.now(timezone.utc)
-DEMO_JOBS = [
-    JobSummary(id=UUID("11111111-1111-1111-1111-111111111111"), title="Machine Learning Engineer", company="Northstar AI", location="Paris, France", remote_type=RemoteType.HYBRID, skills=["Python", "PyTorch", "Docker", "NLP"], source="Greenhouse", source_url="https://boards.greenhouse.io/", published_at=NOW - timedelta(minutes=18), first_seen_at=NOW - timedelta(minutes=4), freshness="Very Fresh"),
-    JobSummary(id=UUID("22222222-2222-2222-2222-222222222222"), title="Senior Data Scientist", company="Lumen Labs", location="Remote — France", remote_type=RemoteType.REMOTE, skills=["Python", "SQL", "AWS"], source="Remotive", source_url="https://remotive.com/", published_at=NOW - timedelta(hours=3), first_seen_at=NOW - timedelta(hours=1), freshness="Fresh"),
-]
+def job_summary(job: Job) -> JobSummary:
+    return JobSummary(
+        id=job.id, title=job.title, company=job.company, location=job.location,
+        remote_type=job.remote_type, skills=job.skills or [], source=job.source,
+        source_url=job.source_url, published_at=job.published_at,
+        first_seen_at=job.first_seen_at, freshness=freshness_label(job.first_seen_at),
+    )
 
 
 class JobService:
-    """Search boundary; replace its demo repository with OpenSearch in phase two."""
-
-    def search(self, q: str | None, location: str | None, remote: RemoteType | None, page_size: int) -> JobPage:
-        jobs = DEMO_JOBS
+    async def search(self, session: AsyncSession, q: str | None, location: str | None, remote: RemoteType | None, page: int, page_size: int) -> JobPage:
+        statement: Select[tuple[Job]] = select(Job).where(Job.status == "active")
         if q:
-            query = q.lower()
-            jobs = [job for job in jobs if query in f"{job.title} {job.company} {' '.join(job.skills)}".lower()]
+            term = f"%{q.strip()}%"
+            statement = statement.where(Job.title.ilike(term) | Job.company.ilike(term) | Job.description.ilike(term))
         if location:
-            jobs = [job for job in jobs if job.location and location.lower() in job.location.lower()]
+            statement = statement.where(Job.location.ilike(f"%{location.strip()}%"))
         if remote:
-            jobs = [job for job in jobs if job.remote_type == remote]
-        items = [job.model_copy(update={"freshness": freshness_label(job.first_seen_at)}) for job in jobs[:page_size]]
-        return JobPage(items=items, total=len(jobs))
+            statement = statement.where(Job.remote_type == remote.value)
+        total = await session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        statement = statement.order_by(Job.published_at.desc().nullslast(), Job.first_seen_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        jobs = (await session.scalars(statement)).all()
+        return JobPage(items=[job_summary(job) for job in jobs], total=total, next_cursor=str(page + 1) if page * page_size < total else None)
+
+    async def get(self, session: AsyncSession, job_id: UUID) -> JobDetail | None:
+        job = await session.get(Job, job_id)
+        if job is None:
+            return None
+        return JobDetail(**job_summary(job).model_dump(), description=job.description, application_url=job.application_url, employment_type=job.employment_type, experience_level=job.experience_level, salary_min=job.salary_min, salary_max=job.salary_max, currency=job.currency, status=job.status)
+
+
+async def seed_demo_jobs(session: AsyncSession) -> None:
+    if await session.scalar(select(func.count()).select_from(Job)):
+        return
+    now = datetime.now(timezone.utc)
+    session.add_all([
+        Job(source="Greenhouse", source_job_id="demo-ml-1", source_url="https://boards.greenhouse.io/", application_url="https://boards.greenhouse.io/", title="Machine Learning Engineer", company="Northstar AI", description="Build dependable NLP and machine learning products with Python, PyTorch, Docker, and collaborative engineering practices.", location="Paris, France", country="France", city="Paris", remote_type="hybrid", employment_type="full_time", experience_level="mid", skills=["Python", "PyTorch", "Docker", "NLP"], published_at=now-timedelta(minutes=18), first_seen_at=now-timedelta(minutes=4), last_seen_at=now),
+        Job(source="Remotive", source_job_id="demo-ds-1", source_url="https://remotive.com/", application_url="https://remotive.com/", title="Senior Data Scientist", company="Lumen Labs", description="Own experimentation and data products. Strong Python, SQL, and AWS skills are required.", location="Remote — France", country="France", city=None, remote_type="remote", employment_type="full_time", experience_level="senior", skills=["Python", "SQL", "AWS"], published_at=now-timedelta(hours=3), first_seen_at=now-timedelta(hours=1), last_seen_at=now),
+    ])
+    await session.commit()

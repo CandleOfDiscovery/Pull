@@ -4,7 +4,9 @@ A production-oriented foundation for a personal real-time job intelligence platf
 
 ## Current implementation
 
-Phase 1 foundation and a vertical job-search slice are implemented: Docker development infrastructure, FastAPI health and versioned jobs endpoint, deterministic freshness labels, a responsive React search experience, connector interface, demo data, and backend tests. The job endpoint deliberately exposes demo data only; database migrations, user authentication, real connectors, Kafka consumers, Airflow DAGs, CV processing, matching, applications, alerts, and notifications remain planned work—not enabled UI claims.
+The current vertical slice includes Docker development infrastructure; a PostgreSQL/SQLite-compatible SQLAlchemy model; Alembic initial migration; secure registration and login; profile editing; persisted job search/detail endpoints; deterministic freshness; explainable deterministic matching; saved jobs; alerts; demo data; a responsive React search experience; and a public-source connector contract. The demo seed is intentionally enabled for local exploration.
+
+Kafka consumers, Airflow DAGs, real source connectors, OpenSearch indexing, CV/object-storage processing, application pipeline UI, notification delivery, and administrative observability remain the next implementation increments. They are not represented as completed product functionality.
 
 ## Run locally
 

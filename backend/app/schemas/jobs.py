@@ -29,3 +29,14 @@ class JobPage(BaseModel):
     items: list[JobSummary]
     next_cursor: str | None = None
     total: int
+
+
+class JobDetail(JobSummary):
+    description: str
+    application_url: HttpUrl | None = None
+    employment_type: str | None = None
+    experience_level: str | None = None
+    salary_min: int | None = None
+    salary_max: int | None = None
+    currency: str | None = None
+    status: str
