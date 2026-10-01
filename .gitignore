@@ -1,0 +1,11 @@
+.env
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+node_modules/
+dist/
+postgres-data/
+redis-data/
+opensearch-data/
+minio-data/
